@@ -71,6 +71,9 @@ import { MatTooltipModule } from '@angular/material/tooltip';
       width: 240px;
       background: var(--color-sidebar-bg);
       border-right: 1px solid var(--color-sidebar-border, rgba(0,0,0,0.08));
+    }
+
+    :host ::ng-deep .app-sidenav .mat-drawer-inner-container {
       display: flex;
       flex-direction: column;
     }

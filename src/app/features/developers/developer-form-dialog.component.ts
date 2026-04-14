@@ -29,6 +29,10 @@ import { TeamService } from '../../core/services/team.service';
           <input matInput formControlName="jiraKey">
         </mat-form-field>
         <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Occupation (%)</mat-label>
+          <input matInput type="number" formControlName="occupation" min="0" max="100" placeholder="e.g. 70">
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Team</mat-label>
           <mat-select formControlName="teamId">
             <mat-option [value]="null">None</mat-option>
@@ -57,6 +61,7 @@ export class DeveloperFormDialogComponent implements OnInit {
     name: [this.data?.name || '', Validators.required],
     displayName: [this.data?.displayName || ''],
     jiraKey: [this.data?.jiraKey || ''],
+    occupation: [this.data?.occupation != null ? Math.round(this.data.occupation * 100) : null],
     teamId: [this.data?.teamId || null]
   });
 
@@ -66,7 +71,12 @@ export class DeveloperFormDialogComponent implements OnInit {
 
   save() {
     if (this.form.valid) {
-      this.dialogRef.close(this.form.value);
+      const val = this.form.value;
+      const occPercent = val.occupation;
+      this.dialogRef.close({
+        ...val,
+        occupation: occPercent != null && occPercent !== '' ? occPercent / 100 : null
+      });
     }
   }
 }

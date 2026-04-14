@@ -3,6 +3,7 @@ export interface Developer {
   name: string;
   displayName: string;
   jiraKey: string;
+  occupation: number | null;
   teamId: number | null;
   teamName: string | null;
 }

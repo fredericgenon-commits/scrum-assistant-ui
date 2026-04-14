@@ -13,6 +13,18 @@ import { SprintService } from '../../core/services/sprint.service';
 import { ReportService } from '../../core/services/report.service';
 import { minutesToDisplay } from '../../shared/utils/time-format.util';
 
+function countBusinessDays(startDate: string, endDate: string): number {
+  let count = 0;
+  const current = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  while (current < end) {
+    const dow = current.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    current.setDate(current.getDate() + 1);
+  }
+  return count;
+}
+
 @Component({
   selector: 'app-report-dashboard',
   standalone: true,
@@ -30,7 +42,7 @@ import { minutesToDisplay } from '../../shared/utils/time-format.util';
       <div class="filters-row">
         <mat-form-field appearance="outline">
           <mat-label>Team</mat-label>
-          <mat-select [(value)]="selectedTeamId" (selectionChange)="loadReport()">
+          <mat-select [(value)]="selectedTeamId" (selectionChange)="onTeamChange()">
             @for (team of teams(); track team.id) {
               <mat-option [value]="team.id">{{ team.name }}</mat-option>
             }
@@ -79,7 +91,7 @@ import { minutesToDisplay } from '../../shared/utils/time-format.util';
               </div>
               <div class="time-bar">
                 <div class="time-bar-fill"
-                     [style.width.%]="maxMinutes() > 0 ? (report.totalMinutes / maxMinutes() * 100) : 0">
+                     [style.width.%]="completionPct(report)">
                 </div>
               </div>
               <div class="dev-breakdown">
@@ -231,35 +243,49 @@ export class ReportDashboardComponent implements OnInit {
     const r = this.reports();
     return r.length > 0 ? Math.round(this.totalMinutes() / r.length) : 0;
   });
-  maxMinutes = computed(() => Math.max(...this.reports().map(r => r.totalMinutes), 1));
-
   formatMinutes = minutesToDisplay;
+
+  completionPct(report: TimeLogReport): number {
+    const sprint = this.sprints().find(s => s.id === this.selectedSprintId);
+    if (!sprint) return 0;
+    const days = countBusinessDays(sprint.startDate.substring(0, 10), sprint.endDate.substring(0, 10));
+    const occupation = report.occupation ?? 1;
+    const expectedMinutes = days * 8 * 60 * occupation;
+    if (expectedMinutes <= 0) return 0;
+    return Math.min(100, report.totalMinutes / expectedMinutes * 100);
+  }
 
   ngOnInit() {
     this.teamService.findAll().subscribe(teams => {
       this.teams.set(teams);
       if (teams.length > 0) {
         this.selectedTeamId = teams[0].id;
+        this.loadSprintsForTeam(teams[0].id);
       }
     });
+  }
 
-    this.sprintService.findAll().subscribe(sprints => {
-      this.sprints.set(sprints);
-    });
+  onTeamChange() {
+    if (this.selectedTeamId) {
+      this.loadSprintsForTeam(this.selectedTeamId);
+    }
+  }
 
-    this.sprintService.findCurrentSprint().subscribe({
-      next: sprint => {
-        if (sprint) {
-          this.currentSprintId.set(sprint.id);
-          this.selectedSprintId = sprint.id;
-          if (this.selectedTeamId) this.loadReport();
-        }
-      },
-      error: () => {
-        if (this.sprints().length > 0) {
-          this.selectedSprintId = this.sprints()[0].id;
-        }
+  private loadSprintsForTeam(teamId: number) {
+    this.sprintService.findByTeamId(teamId).subscribe(sprints => {
+      const sorted = [...sprints].sort((a, b) => b.startDate.localeCompare(a.startDate));
+      this.sprints.set(sorted);
+
+      const now = new Date().toISOString();
+      const current = sorted.find(s => s.startDate <= now && s.endDate > now);
+      if (current) {
+        this.currentSprintId.set(current.id);
+        this.selectedSprintId = current.id;
+      } else if (sorted.length) {
+        this.currentSprintId.set(null);
+        this.selectedSprintId = sorted[0].id;
       }
+      this.loadReport();
     });
   }
 
@@ -282,7 +308,6 @@ export class ReportDashboardComponent implements OnInit {
   goToDetail(developerId: number) {
     this.router.navigate(['/reports/developer', developerId], {
       queryParams: {
-        teamId: this.selectedTeamId,
         sprintId: this.selectedSprintId
       }
     });

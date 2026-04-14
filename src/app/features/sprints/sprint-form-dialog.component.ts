@@ -332,12 +332,12 @@ export class SprintFormDialogComponent implements OnInit {
     return `${yyyy}-${mm}-${dd}T${hh}:${mi}:00`;
   }
 
-  /** Formats a Date for display: "2026-04-27" */
+  /** Formats a Date for display: "27/04/2026" */
   private formatDisplayDate(d: Date): string {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
+    return `${dd}/${mm}/${yyyy}`;
   }
 
   /** Converts a date picker Date value to a timestamp string with team startHour */

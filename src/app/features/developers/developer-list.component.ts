@@ -35,6 +35,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
               <mat-chip>{{ d.jiraKey }}</mat-chip>
             </td>
           </ng-container>
+          <ng-container matColumnDef="occupation">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Occupation</th>
+            <td mat-cell *matCellDef="let d">{{ d.occupation != null ? (d.occupation * 100) + '%' : '—' }}</td>
+          </ng-container>
           <ng-container matColumnDef="team">
             <th mat-header-cell *matHeaderCellDef mat-sort-header="teamName">Team</th>
             <td mat-cell *matCellDef="let d">{{ d.teamName || '—' }}</td>
@@ -60,7 +64,7 @@ export class DeveloperListComponent implements OnInit {
 
   sort = viewChild(MatSort);
   dataSource = new MatTableDataSource<Developer>();
-  columns = ['displayName', 'jiraKey', 'team', 'actions'];
+  columns = ['displayName', 'jiraKey', 'occupation', 'team', 'actions'];
 
   constructor() {
     effect(() => {
