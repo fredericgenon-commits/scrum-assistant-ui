@@ -4,7 +4,6 @@ import { MatDialogModule, MAT_DIALOG_DATA, MatDialogRef } from '@angular/materia
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatDatepickerModule } from '@angular/material/datepicker';
-import { MatNativeDateModule } from '@angular/material/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSelectModule } from '@angular/material/select';
 import { MatRadioModule } from '@angular/material/radio';
@@ -27,7 +26,7 @@ export interface SprintDialogResult {
   standalone: true,
   imports: [
     ReactiveFormsModule, MatDialogModule, MatFormFieldModule, MatInputModule,
-    MatDatepickerModule, MatNativeDateModule, MatButtonModule, MatSelectModule, MatRadioModule
+    MatDatepickerModule, MatButtonModule, MatSelectModule, MatRadioModule
   ],
   template: `
     @if (data.sprint) {
@@ -117,6 +116,12 @@ export interface SprintDialogResult {
         @if (createMode === 'pip' && selectedTeamId) {
           <div class="pip-summary">
             <h3>{{ pipLabel() }}</h3>
+      <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Start Date</mat-label>
+              <input matInput [matDatepicker]="ps" [formControl]="pipStartControl">
+              <mat-datepicker-toggle matIconSuffix [for]="ps"></mat-datepicker-toggle>
+              <mat-datepicker #ps></mat-datepicker>
+            </mat-form-field>
             @for (s of pipSprints(); track $index; let i = $index) {
               <div class="pip-sprint-row">
                 <strong>{{ s.name }}</strong>
@@ -172,6 +177,11 @@ export class SprintFormDialogComponent implements OnInit {
   selectedTeamId: number | null = null;
   createMode: 'single' | 'pip' = 'pip';
   pipVelocity: number | null = null;
+  pipStartDate = signal<Date | null>(null);
+  pipStartControl = this.fb.control<Date | null>(null);
+
+  /** Matches "<team>_<yy>_PIP<n>_S<n>" and captures year, pip, sprint number. */
+  private readonly NAME_RE = /_(\d{2})_PIP(\d+)_S(\d+)\b/;
 
   editForm: FormGroup = this.fb.group({
     name: [this.data.sprint?.name || '', Validators.required],
@@ -191,30 +201,28 @@ export class SprintFormDialogComponent implements OnInit {
   pipLabel = computed(() => {
     const team = this.teams().find(t => t.id === this.selectedTeamId);
     if (!team) return '';
-    const year = new Date().getFullYear().toString().slice(-2);
-    const nextPip = this.getNextPipNumber();
-    return `${team.name}_${year}_PIP${nextPip}`;
+    const { year, pip } = this.nextPipIdentity();
+    return `${team.name}_${this.pad2(year)}_PIP${pip}`;
   });
 
   pipSprints = computed(() => {
     const team = this.teams().find(t => t.id === this.selectedTeamId);
-    if (!team) return [];
-    const year = new Date().getFullYear().toString().slice(-2);
-    const nextPip = this.getNextPipNumber();
-    const prefix = `${team.name}_${year}_PIP${nextPip}`;
-    const startDate = this.getNextPipStartDate();
+    const startDate = this.pipStartDate();
+    if (!team || !startDate) return [];
+    const { year, pip } = this.nextPipIdentity();
+    const prefix = `${team.name}_${this.pad2(year)}_PIP${pip}`;
     const startHour = this.getTeamStartHour();
 
     const sprints: { name: string; startDate: string; endDate: string; displayStart: string; displayEnd: string }[] = [];
     let current = new Date(startDate);
 
     for (let i = 1; i <= 4; i++) {
-      const weeks = i <= 3 ? 2 : 1;
+      const weeks = this.sprintWeeks(i);
       const start = new Date(current);
       const end = new Date(current);
       end.setDate(end.getDate() + weeks * 7);
       sprints.push({
-        name: `${prefix}_Sprint${i}`,
+        name: `${prefix}_S${i}`,
         startDate: this.toTimestamp(start, startHour),
         endDate: this.toTimestamp(end, startHour),
         displayStart: this.formatDisplayDate(start),
@@ -234,14 +242,17 @@ export class SprintFormDialogComponent implements OnInit {
     if (this.data.sprint?.teamId) {
       this.selectedTeamId = this.data.sprint.teamId;
     }
+    this.pipStartControl.valueChanges.subscribe(d => this.pipStartDate.set(d ?? null));
+    this.singleForm.get('startDate')!.valueChanges.subscribe(d => this.recomputeSingleEndDate(d));
   }
 
   onTeamChange() {
     if (this.selectedTeamId) {
       this.sprintService.findByTeamId(this.selectedTeamId).subscribe(sprints => {
         this.teamSprints.set(sprints);
-        const lastSprint = sprints.length ? sprints[0] : null;
-        this.pipVelocity = lastSprint?.velocity ?? null;
+        const latest = this.latestSprint(sprints);
+        this.pipVelocity = latest?.velocity ?? null;
+        this.pipStartControl.setValue(this.getNextStartDate());
         this.prefillSingle();
       });
     }
@@ -258,55 +269,37 @@ export class SprintFormDialogComponent implements OnInit {
     return team?.startHour || '09:30';
   }
 
-  private prefillSingle() {
-    const team = this.teams().find(t => t.id === this.selectedTeamId);
-    if (!team) return;
-    const year = new Date().getFullYear().toString().slice(-2);
-    const nextPip = this.getNextPipNumber();
-    const nextSprintNum = this.getNextSprintNumber();
-    const name = `${team.name}_${year}_PIP${nextPip}_Sprint${nextSprintNum}`;
-    const startDate = this.getNextPipStartDate();
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 14); // 2 weeks
-
-    this.singleForm.patchValue({
-      name,
-      startDate: new Date(startDate),
-      endDate,
-      velocity: this.pipVelocity
-    });
+  private pad2(n: number): string {
+    return String(n).padStart(2, '0');
   }
 
-  private getNextPipNumber(): number {
-    const currentYear = new Date().getFullYear().toString().slice(-2);
-    const sprints = this.teamSprints();
-    let maxPip = 0;
-    for (const s of sprints) {
-      const match = s.name.match(/_(\d{2})_PIP(\d+)_Sprint/);
-      if (match && match[1] === currentYear) {
-        maxPip = Math.max(maxPip, parseInt(match[2], 10));
-      }
-    }
-    const currentPipSprints = sprints.filter(s => s.name.includes(`_PIP${maxPip}_Sprint`));
-    if (maxPip === 0 || currentPipSprints.length >= 4) {
-      return maxPip + 1;
-    }
-    return maxPip;
+  /** Last two digits of a date's year, as a number. */
+  private yearOf(d: Date): number {
+    return +d.getFullYear().toString().slice(-2);
   }
 
-  private getNextSprintNumber(): number {
-    const currentYear = new Date().getFullYear().toString().slice(-2);
-    const pip = this.getNextPipNumber();
-    const pipSprints = this.teamSprints().filter(s => s.name.includes(`_${currentYear}_PIP${pip}_Sprint`));
-    return pipSprints.length + 1;
+  /** Sprints 1-3 last 2 weeks, sprint 4 lasts 1 week. */
+  private sprintWeeks(sprintNum: number): number {
+    return sprintNum === 4 ? 1 : 2;
   }
 
-  private getNextPipStartDate(): Date {
-    const sprints = this.teamSprints();
-    if (sprints.length > 0) {
-      const latest = sprints[0];
-      // endDate is now a timestamp string like "2026-04-26T09:30:00"
-      // endDate of last sprint = startDate of next sprint (contiguous)
+  /** Parses a sprint name into its (year, pip, sprint) parts, or null. */
+  private parseSprintName(name: string | null | undefined): { year: number; pip: number; sprint: number } | null {
+    const m = name?.match(this.NAME_RE);
+    return m ? { year: +m[1], pip: +m[2], sprint: +m[3] } : null;
+  }
+
+  /** The sprint of the team that ends the latest (furthest in the future). */
+  private latestSprint(sprints: Sprint[]): Sprint | null {
+    if (!sprints.length) return null;
+    return sprints.reduce((a, b) =>
+      new Date(b.endDate).getTime() > new Date(a.endDate).getTime() ? b : a);
+  }
+
+  /** Start date of the next sprint: end date of the latest sprint, else next Monday. */
+  private getNextStartDate(): Date {
+    const latest = this.latestSprint(this.teamSprints());
+    if (latest) {
       const next = new Date(latest.endDate);
       next.setHours(0, 0, 0, 0);
       return next;
@@ -317,6 +310,51 @@ export class SprintFormDialogComponent implements OnInit {
     today.setDate(today.getDate() + daysUntilMonday);
     today.setHours(0, 0, 0, 0);
     return today;
+  }
+
+  /** Name parts of the next single sprint, derived from the latest sprint. */
+  private nextSingleIdentity(startDate: Date): { name: string } {
+    const team = this.teams().find(t => t.id === this.selectedTeamId)!;
+    const startYear = this.yearOf(startDate);
+    const parsed = this.parseSprintName(this.latestSprint(this.teamSprints())?.name);
+    let year: number, pip: number, sprint: number;
+    if (!parsed) {
+      year = startYear; pip = 1; sprint = 1;
+    } else if (parsed.sprint < 4) {
+      year = startYear; pip = parsed.pip; sprint = parsed.sprint + 1;
+    } else {
+      year = startYear; sprint = 1;
+      pip = startYear === parsed.year ? parsed.pip + 1 : 1;
+    }
+    return { name: `${team.name}_${this.pad2(year)}_PIP${pip}_S${sprint}` };
+  }
+
+  /** Year and PIP number of the next full PIP, derived from the latest sprint. */
+  private nextPipIdentity(): { year: number; pip: number } {
+    const start = this.pipStartDate() ?? this.getNextStartDate();
+    const startYear = this.yearOf(start);
+    const parsed = this.parseSprintName(this.latestSprint(this.teamSprints())?.name);
+    if (!parsed) return { year: startYear, pip: 1 };
+    return { year: startYear, pip: startYear === parsed.year ? parsed.pip + 1 : 1 };
+  }
+
+  private prefillSingle() {
+    const team = this.teams().find(t => t.id === this.selectedTeamId);
+    if (!team) return;
+    const startDate = this.getNextStartDate();
+    const { name } = this.nextSingleIdentity(startDate);
+    // endDate is recomputed by the startDate valueChanges listener.
+    this.singleForm.patchValue({ name, startDate, velocity: this.pipVelocity });
+  }
+
+  /** Recomputes the single-sprint end date from its start date and the rule. */
+  private recomputeSingleEndDate(start: Date | null) {
+    if (!(start instanceof Date) || isNaN(start.getTime())) return;
+    const parsed = this.parseSprintName(this.singleForm.get('name')!.value);
+    const weeks = this.sprintWeeks(parsed?.sprint ?? 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + weeks * 7);
+    this.singleForm.get('endDate')!.setValue(end, { emitEvent: false });
   }
 
   /** Formats a date + startHour as ISO local datetime: "2026-04-27T09:30:00" */
