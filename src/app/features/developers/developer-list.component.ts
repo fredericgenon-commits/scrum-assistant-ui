@@ -6,6 +6,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatSortModule, MatSort } from '@angular/material/sort';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { PercentPipe } from '@angular/common';
 import { Developer } from '../../core/models';
 import { DeveloperService } from '../../core/services/developer.service';
 import { DeveloperFormDialogComponent } from './developer-form-dialog.component';
@@ -14,7 +15,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 @Component({
   selector: 'app-developer-list',
   standalone: true,
-  imports: [MatTableModule, MatButtonModule, MatIconModule, MatChipsModule, MatSortModule],
+  imports: [MatTableModule, MatButtonModule, MatIconModule, MatChipsModule, MatSortModule, PercentPipe],
   template: `
     <div class="page-container">
       <div class="page-header">
@@ -37,7 +38,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           </ng-container>
           <ng-container matColumnDef="occupation">
             <th mat-header-cell *matHeaderCellDef mat-sort-header>Occupation</th>
-            <td mat-cell *matCellDef="let d">{{ d.occupation != null ? (d.occupation * 100) + '%' : '—' }}</td>
+<!--            <td mat-cell *matCellDef="let d">{{ d.occupation != null ? (d.occupation * 100) + '%' : '—' }}</td>-->
+            <td mat-cell *matCellDef="let d">{{ d.occupation | percent }}</td>
           </ng-container>
           <ng-container matColumnDef="team">
             <th mat-header-cell *matHeaderCellDef mat-sort-header="teamName">Team</th>
