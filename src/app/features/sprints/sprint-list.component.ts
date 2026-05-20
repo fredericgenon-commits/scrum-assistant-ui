@@ -4,8 +4,11 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatSortModule, MatSort } from '@angular/material/sort';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectModule } from '@angular/material/select';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { Sprint, Team } from '../../core/models';
 import { SprintService } from '../../core/services/sprint.service';
@@ -16,7 +19,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 @Component({
   selector: 'app-sprint-list',
   standalone: true,
-  imports: [MatTableModule, MatButtonModule, MatIconModule, MatChipsModule, MatSortModule, DatePipe],
+  imports: [
+    MatTableModule, MatButtonModule, MatIconModule, MatChipsModule, MatSortModule,
+    MatFormFieldModule, MatSelectModule, FormsModule, DatePipe
+  ],
   template: `
     <div class="page-container">
       <div class="page-header">
@@ -24,6 +30,17 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         <button mat-flat-button color="primary" (click)="openForm()">
           <mat-icon>add</mat-icon> New Sprint
         </button>
+      </div>
+      <div class="filters-row">
+        <mat-form-field appearance="outline">
+          <mat-label>Team</mat-label>
+          <mat-select [(value)]="selectedTeamId" (selectionChange)="applyFilter()">
+            <mat-option [value]="null">All teams</mat-option>
+            @for (team of teams(); track team.id) {
+              <mat-option [value]="team.id">{{ team.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
       </div>
       <div class="card-elevated">
         <table mat-table [dataSource]="dataSource" matSort>
@@ -64,7 +81,13 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         </table>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    .filters-row {
+      margin-bottom: 16px;
+      mat-form-field { min-width: 220px; }
+    }
+  `]
 })
 export class SprintListComponent implements OnInit {
   private sprintService = inject(SprintService);
@@ -76,7 +99,10 @@ export class SprintListComponent implements OnInit {
   dataSource = new MatTableDataSource<Sprint>();
   teams = signal<Team[]>([]);
   currentSprintId = signal<number | null>(null);
+  selectedTeamId: number | null = null;
   columns = ['name', 'teamName', 'startDate', 'endDate', 'velocity', 'actions'];
+
+  private allSprints: Sprint[] = [];
 
   constructor() {
     effect(() => {
@@ -95,7 +121,16 @@ export class SprintListComponent implements OnInit {
   }
 
   load() {
-    this.sprintService.findAll().subscribe(data => this.dataSource.data = data);
+    this.sprintService.findAll().subscribe(data => {
+      this.allSprints = data;
+      this.applyFilter();
+    });
+  }
+
+  applyFilter() {
+    this.dataSource.data = this.selectedTeamId == null
+      ? this.allSprints
+      : this.allSprints.filter(s => s.teamId === this.selectedTeamId);
   }
 
   openForm(sprint?: Sprint) {
