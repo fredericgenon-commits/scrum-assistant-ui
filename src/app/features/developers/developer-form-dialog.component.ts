@@ -25,6 +25,13 @@ import { TeamService } from '../../core/services/team.service';
           <input matInput formControlName="displayName">
         </mat-form-field>
         <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Email</mat-label>
+          <input matInput type="email" formControlName="email">
+          @if (form.get('email')?.hasError('email')) {
+            <mat-error>Invalid email format</mat-error>
+          }
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Jira Key</mat-label>
           <input matInput formControlName="jiraKey">
         </mat-form-field>
@@ -60,6 +67,7 @@ export class DeveloperFormDialogComponent implements OnInit {
   form: FormGroup = this.fb.group({
     name: [this.data?.name || '', Validators.required],
     displayName: [this.data?.displayName || ''],
+    email: [this.data?.email || null, Validators.email],
     jiraKey: [this.data?.jiraKey || ''],
     occupation: [this.data?.occupation != null ? Math.round(this.data.occupation * 100) : null],
     teamId: [this.data?.teamId || null]
