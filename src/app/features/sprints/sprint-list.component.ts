@@ -15,6 +15,14 @@ import { SprintService } from '../../core/services/sprint.service';
 import { TeamService } from '../../core/services/team.service';
 import { SprintFormDialogComponent, SprintDialogResult } from './sprint-form-dialog.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { parseSprintName } from '../../shared/utils/sprint-name.util';
+
+interface PipOption {
+  key: string;
+  label: string;
+  year: number | null;
+  pip: number | null;
+}
 
 @Component({
   selector: 'app-sprint-list',
@@ -38,6 +46,14 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
             <mat-option [value]="null">All teams</mat-option>
             @for (team of teams(); track team.id) {
               <mat-option [value]="team.id">{{ team.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>PIP filter</mat-label>
+          <mat-select [(value)]="selectedPipKey" (selectionChange)="applyFilter()">
+            @for (opt of pipOptions; track opt.key) {
+              <mat-option [value]="opt.key">{{ opt.label }}</mat-option>
             }
           </mat-select>
         </mat-form-field>
@@ -84,6 +100,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
   `,
   styles: [`
     .filters-row {
+      display: flex;
+      gap: 16px;
       margin-bottom: 16px;
       mat-form-field { min-width: 220px; }
     }
@@ -100,6 +118,8 @@ export class SprintListComponent implements OnInit {
   teams = signal<Team[]>([]);
   currentSprintId = signal<number | null>(null);
   selectedTeamId: number | null = null;
+  selectedPipKey: string = 'all';
+  pipOptions: PipOption[] = [{ key: 'all', label: 'All', year: null, pip: null }];
   columns = ['name', 'teamName', 'startDate', 'endDate', 'velocity', 'actions'];
 
   private allSprints: Sprint[] = [];
@@ -123,14 +143,57 @@ export class SprintListComponent implements OnInit {
   load() {
     this.sprintService.findAll().subscribe(data => {
       this.allSprints = data;
+      this.recomputePipOptions();
+      const currentYearKey = String(new Date().getFullYear() % 100);
+      this.selectedPipKey = this.pipOptions.some(o => o.key === currentYearKey)
+        ? currentYearKey
+        : 'all';
       this.applyFilter();
     });
   }
 
   applyFilter() {
-    this.dataSource.data = this.selectedTeamId == null
+    this.recomputePipOptions();
+    const opt = this.pipOptions.find(o => o.key === this.selectedPipKey);
+    this.dataSource.data = this.allSprints.filter(s => {
+      if (this.selectedTeamId != null && s.teamId !== this.selectedTeamId) return false;
+      if (!opt || opt.year == null) return true;
+      const p = parseSprintName(s.name);
+      if (!p) return false;
+      if (p.year !== opt.year) return false;
+      if (opt.pip != null && p.pip !== opt.pip) return false;
+      return true;
+    });
+  }
+
+  private recomputePipOptions() {
+    const teamSprints = this.selectedTeamId == null
       ? this.allSprints
       : this.allSprints.filter(s => s.teamId === this.selectedTeamId);
+
+    const byYear = new Map<number, Set<number>>();
+    for (const s of teamSprints) {
+      const p = parseSprintName(s.name);
+      if (!p) continue;
+      if (!byYear.has(p.year)) byYear.set(p.year, new Set());
+      byYear.get(p.year)!.add(p.pip);
+    }
+
+    const options: PipOption[] = [{ key: 'all', label: 'All', year: null, pip: null }];
+    const years = [...byYear.keys()].sort((a, b) => b - a);
+    for (const y of years) {
+      const yy = String(y).padStart(2, '0');
+      options.push({ key: `${y}`, label: `${yy} (all PIPs)`, year: y, pip: null });
+      const pips = [...byYear.get(y)!].sort((a, b) => b - a);
+      for (const p of pips) {
+        options.push({ key: `${y}-${p}`, label: `${yy} / PIP${p}`, year: y, pip: p });
+      }
+    }
+    this.pipOptions = options;
+
+    if (!options.some(o => o.key === this.selectedPipKey)) {
+      this.selectedPipKey = 'all';
+    }
   }
 
   openForm(sprint?: Sprint) {

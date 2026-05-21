@@ -124,9 +124,9 @@ a **time log threshold** in minutes, and a **day start time**
 (default `09:30`).
 
 ### 4.2 Developer
-Has a technical name, a display name, a **Jira key** and an
-**occupation rate**. Occupation is stored as a fraction (`0.7`) but entered
-and displayed as a percentage (`70%`).
+Has a technical name, a display name, an optional **email**, a **Jira key**
+and an **occupation rate**. Occupation is stored as a fraction (`0.7`) but
+entered and displayed as a percentage (`70%`).
 
 ### 4.3 Sprint
 A dated iteration attached to a team, with a **velocity** as a percentage.
@@ -156,17 +156,33 @@ The dialog form offers:
 
 ### 5.2 Developer management (`/developers`)
 
-A sortable table (Name, Jira Key, Occupation, Team). Occupation is displayed
-as a percentage. Actions: create, edit, delete.
+A sortable table (Name, Email, Jira Key, Occupation, Team). Occupation is
+displayed as a percentage; a missing email is rendered as `—`. Actions:
+create, edit, delete.
 
-The form provides Username (required), Display Name, Jira Key,
-Occupation (%) and Team assignment. The percentage ↔ fraction conversion
-happens at save time (`70` → `0.7`).
+The form provides Username (required), Display Name, **Email** (optional,
+validated against the standard email format), Jira Key, Occupation (%) and
+Team assignment. The percentage ↔ fraction conversion happens at save time
+(`70` → `0.7`).
 
 ### 5.3 Sprint management (`/sprints`)
 
 A sortable table (Name, Team, Dates, Velocity). The current sprint is marked
 with a **"Current"** chip. Actions: create, edit, delete.
+
+**Filters** (combined as AND, applied client-side):
+- **Team** — restricts the table to sprints of the selected team.
+- **PIP filter** — a single aggregated drop-down listing every distinct
+  year and PIP found in the loaded sprints, in the form `All`,
+  `26 (all PIPs)`, `26 / PIP3`, `26 / PIP2`, `25 (all PIPs)`, …. Years and
+  PIPs are sorted most-recent first. The list is recomputed from the
+  sprints of the currently selected team, so changing Team narrows the
+  available PIP options (the selection falls back to `All` if it is no
+  longer available). On screen load, the filter is pre-selected on the
+  current year (e.g. `26` in 2026), or `All` if no sprint of that year is
+  loaded. Sprints whose name does not follow the `Team_YY_PIPn_Sn`
+  convention are excluded as soon as a PIP filter other than `All` is
+  active.
 
 The creation form supports **two modes**:
 
@@ -193,6 +209,12 @@ Creates a **PIP** (Program Increment) of **4 sprints** at once:
 Names follow the convention `Team_YY_PIPn_Sn`
 (e.g. `TeamA_26_PIP3_S1`). The year, PIP number and sprint number
 are derived automatically from the latest existing sprint.
+
+The **first sprint name is editable**: changing it propagates to the other
+three (the suffix `_S1` is replaced by `_S2`, `_S3`, `_S4`; if the typed
+name has no `_Sn` suffix, the indexed suffix is appended). The auto-derived
+name is kept in sync with the start date as long as the field has not been
+manually edited; changing team always resets the field.
 
 **Naming and sequencing rules:**
 

@@ -11,6 +11,7 @@ import { MatRadioModule } from '@angular/material/radio';
 import { Sprint, Team } from '../../core/models';
 import { TeamService } from '../../core/services/team.service';
 import { SprintService } from '../../core/services/sprint.service';
+import { parseSprintName } from '../../shared/utils/sprint-name.util';
 
 export interface SprintDialogData {
   sprint: Sprint | null;
@@ -187,9 +188,6 @@ export class SprintFormDialogComponent implements OnInit {
   firstSprintNameControl = this.fb.control<string>('', { nonNullable: true });
   firstSprintNameSignal = toSignal(this.firstSprintNameControl.valueChanges, { initialValue: '' });
 
-  /** Matches "<team>_<yy>_PIP<n>_S<n>" and captures year, pip, sprint number. */
-  private readonly NAME_RE = /_(\d{2})_PIP(\d+)_S(\d+)\b/;
-
   editForm: FormGroup = this.fb.group({
     name: [this.data.sprint?.name || '', Validators.required],
     teamId: [this.data.sprint?.teamId || null],
@@ -317,12 +315,6 @@ export class SprintFormDialogComponent implements OnInit {
     return sprintNum === 4 ? 1 : 2;
   }
 
-  /** Parses a sprint name into its (year, pip, sprint) parts, or null. */
-  private parseSprintName(name: string | null | undefined): { year: number; pip: number; sprint: number } | null {
-    const m = name?.match(this.NAME_RE);
-    return m ? { year: +m[1], pip: +m[2], sprint: +m[3] } : null;
-  }
-
   /** The sprint of the team that ends the latest (furthest in the future). */
   private latestSprint(sprints: Sprint[]): Sprint | null {
     if (!sprints.length) return null;
@@ -350,7 +342,7 @@ export class SprintFormDialogComponent implements OnInit {
   private nextSingleIdentity(startDate: Date): { name: string } {
     const team = this.teams().find(t => t.id === this.selectedTeamId)!;
     const startYear = this.yearOf(startDate);
-    const parsed = this.parseSprintName(this.latestSprint(this.teamSprints())?.name);
+    const parsed = parseSprintName(this.latestSprint(this.teamSprints())?.name);
     let year: number, pip: number, sprint: number;
     if (!parsed) {
       year = startYear; pip = 1; sprint = 1;
@@ -367,7 +359,7 @@ export class SprintFormDialogComponent implements OnInit {
   private nextPipIdentity(): { year: number; pip: number } {
     const start = this.pipStartDate() ?? this.getNextStartDate();
     const startYear = this.yearOf(start);
-    const parsed = this.parseSprintName(this.latestSprint(this.teamSprints())?.name);
+    const parsed = parseSprintName(this.latestSprint(this.teamSprints())?.name);
     if (!parsed) return { year: startYear, pip: 1 };
     return { year: startYear, pip: startYear === parsed.year ? parsed.pip + 1 : 1 };
   }
@@ -384,7 +376,7 @@ export class SprintFormDialogComponent implements OnInit {
   /** Recomputes the single-sprint end date from its start date and the rule. */
   private recomputeSingleEndDate(start: Date | null) {
     if (!(start instanceof Date) || isNaN(start.getTime())) return;
-    const parsed = this.parseSprintName(this.singleForm.get('name')!.value);
+    const parsed = parseSprintName(this.singleForm.get('name')!.value);
     const weeks = this.sprintWeeks(parsed?.sprint ?? 0);
     const end = new Date(start);
     end.setDate(end.getDate() + weeks * 7);
