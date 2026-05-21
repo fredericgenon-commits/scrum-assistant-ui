@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, FormArray, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatDialogModule, MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -116,11 +117,15 @@ export interface SprintDialogResult {
         @if (createMode === 'pip' && selectedTeamId) {
           <div class="pip-summary">
             <h3>{{ pipLabel() }}</h3>
-      <mat-form-field appearance="outline" class="full-width">
+            <mat-form-field appearance="outline" class="full-width">
               <mat-label>Start Date</mat-label>
               <input matInput [matDatepicker]="ps" [formControl]="pipStartControl">
               <mat-datepicker-toggle matIconSuffix [for]="ps"></mat-datepicker-toggle>
               <mat-datepicker #ps></mat-datepicker>
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>First sprint name</mat-label>
+              <input matInput [formControl]="firstSprintNameControl">
             </mat-form-field>
             @for (s of pipSprints(); track $index; let i = $index) {
               <div class="pip-sprint-row">
@@ -179,6 +184,8 @@ export class SprintFormDialogComponent implements OnInit {
   pipVelocity: number | null = null;
   pipStartDate = signal<Date | null>(null);
   pipStartControl = this.fb.control<Date | null>(null);
+  firstSprintNameControl = this.fb.control<string>('', { nonNullable: true });
+  firstSprintNameSignal = toSignal(this.firstSprintNameControl.valueChanges, { initialValue: '' });
 
   /** Matches "<team>_<yy>_PIP<n>_S<n>" and captures year, pip, sprint number. */
   private readonly NAME_RE = /_(\d{2})_PIP(\d+)_S(\d+)\b/;
@@ -199,6 +206,11 @@ export class SprintFormDialogComponent implements OnInit {
   });
 
   pipLabel = computed(() => {
+    const name1 = this.firstSprintNameSignal();
+    if (name1) {
+      const m = name1.match(/^(.+)_S\d+$/);
+      return m ? m[1] : name1;
+    }
     const team = this.teams().find(t => t.id === this.selectedTeamId);
     if (!team) return '';
     const { year, pip } = this.nextPipIdentity();
@@ -209,8 +221,8 @@ export class SprintFormDialogComponent implements OnInit {
     const team = this.teams().find(t => t.id === this.selectedTeamId);
     const startDate = this.pipStartDate();
     if (!team || !startDate) return [];
-    const { year, pip } = this.nextPipIdentity();
-    const prefix = `${team.name}_${this.pad2(year)}_PIP${pip}`;
+    const name1 = this.firstSprintNameSignal() || this.computeAutoFirstName();
+    if (!name1) return [];
     const startHour = this.getTeamStartHour();
 
     const sprints: { name: string; startDate: string; endDate: string; displayStart: string; displayEnd: string }[] = [];
@@ -222,7 +234,7 @@ export class SprintFormDialogComponent implements OnInit {
       const end = new Date(current);
       end.setDate(end.getDate() + weeks * 7);
       sprints.push({
-        name: `${prefix}_S${i}`,
+        name: this.deriveSprintName(name1, i),
         startDate: this.toTimestamp(start, startHour),
         endDate: this.toTimestamp(end, startHour),
         displayStart: this.formatDisplayDate(start),
@@ -233,6 +245,21 @@ export class SprintFormDialogComponent implements OnInit {
     return sprints;
   });
 
+  /** Sprint i's name derived from the first sprint name. */
+  private deriveSprintName(firstName: string, sprintNum: number): string {
+    if (sprintNum === 1) return firstName;
+    const m = firstName.match(/^(.+)_S\d+$/);
+    return m ? `${m[1]}_S${sprintNum}` : `${firstName}_S${sprintNum}`;
+  }
+
+  /** Auto-generated name for sprint 1, based on team + start date + latest sprint history. */
+  private computeAutoFirstName(): string {
+    const team = this.teams().find(t => t.id === this.selectedTeamId);
+    if (!team) return '';
+    const { year, pip } = this.nextPipIdentity();
+    return `${team.name}_${this.pad2(year)}_PIP${pip}_S1`;
+  }
+
   ngOnInit() {
     if (this.data.teams?.length) {
       this.teams.set(this.data.teams);
@@ -242,7 +269,13 @@ export class SprintFormDialogComponent implements OnInit {
     if (this.data.sprint?.teamId) {
       this.selectedTeamId = this.data.sprint.teamId;
     }
-    this.pipStartControl.valueChanges.subscribe(d => this.pipStartDate.set(d ?? null));
+    this.pipStartControl.valueChanges.subscribe(d => {
+      this.pipStartDate.set(d ?? null);
+      if (this.firstSprintNameControl.pristine) {
+        this.firstSprintNameControl.setValue(this.computeAutoFirstName());
+        this.firstSprintNameControl.markAsPristine();
+      }
+    });
     this.singleForm.get('startDate')!.valueChanges.subscribe(d => this.recomputeSingleEndDate(d));
   }
 
@@ -252,6 +285,7 @@ export class SprintFormDialogComponent implements OnInit {
         this.teamSprints.set(sprints);
         const latest = this.latestSprint(sprints);
         this.pipVelocity = latest?.velocity ?? null;
+        this.firstSprintNameControl.markAsPristine();
         this.pipStartControl.setValue(this.getNextStartDate());
         this.prefillSingle();
       });
